@@ -1,0 +1,23 @@
+{
+  "name": "litellm-control-plane-bundle",
+  "description": "Tracked manifest of LiteLLM + lang skills to publish/import. Local litellm-bundle/ is gitignored; this file is the repo SoT.",
+  "owner": "IntegriBilt",
+  "litellmGateway": "http://192.168.254.2:4000",
+  "repo": "IntegriGit/integribilt-skills",
+  "branch": "master",
+  "skills": [
+    "litellm-authentication-security",
+    "litellm-mcp-gateway",
+    "litellm-model-routing",
+    "litellm-monitoring-troubleshooting",
+    "litellm-proxy-configuration",
+    "litellm-skills-gateway-integration",
+    "litellm-vectors-rag",
+    "litellm-skill-manager",
+    "langfuse",
+    "langsmith",
+    "langtrace",
+    "langgraph",
+    "langchain"
+  ]
+}

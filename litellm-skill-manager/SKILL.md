@@ -56,7 +56,7 @@ Verified read-only shape on 2026-06-28: marketplace JSON has top-level keys `nam
 
 1. The skill exists as `integribilt-skills/<skill>/SKILL.md`.
 2. The skill frontmatter validates: starts at byte 0 with `---`, has `name` and `description`, and has a non-empty body.
-3. The skill is committed and pushed to `https://github.com/IntegriGit/integribilt-skills` on the branch the gateway tracks, normally `main`.
+3. The skill is committed and pushed to `https://github.com/IntegriGit/integribilt-skills` on the branch the gateway tracks, normally `master` (confirm with `git branch -vv` / remote HEAD).
 4. `curl`, `jq`, `git`, and BWS are available on the host running registration.
 5. The LiteLLM master key is retrieved from BWS into the local shell only. Never use `llm.txt`, never write the key to disk, and never print it.
 
