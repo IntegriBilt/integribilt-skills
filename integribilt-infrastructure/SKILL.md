@@ -1,100 +1,134 @@
 ---
 name: integribilt-infrastructure
-description: manage integribilt llc infrastructure and deployment work for svr02 ubuntu/docker, ofc01 windows/docker desktop, docker compose v2, the shared docker-compose.yml source of truth, bitwarden secrets manager bws, docker_mcp, neo4j, redis, antigravity storage manager asm conversation sync mcp server for non-ide ai clients, kebab-case folder and resource naming, monitoring, idrac hosts, storage mounts, ssh, server inventory, service health, backups, recovery, sql, mitek, front counter devices, domain controllers, dns, and dhcp. use when the user asks about integribilt servers, endpoints, device roles, ips, compose profiles, bws secret handling, mcp endpoints, asm sync, antigravity sync, claude.ai or other non-ide client memory access, naming conventions, zabbix, opennms, grafana, prometheus, graylog, uptime-kuma, netbox, paperless-ngx, n8n, open webui, or infrastructure procedures.
+description: IntegriBilt infrastructure facts and rules. Hosts and addresses, Tailscale-only remote access, the single shared docker-compose.yml (SVR02 master, OFC01 clone), Bitwarden Secrets (bws), the LiteLLM gateway for models, MCP tools and skills, local models on OFC01, Hermes, Paperclip, Honcho, Buzz, monitoring, backups, and safe change procedures. Use for any question or task about IntegriBilt servers, services, ports, deployments, secrets, model names, or how an agent connects to something.
+version: 2.1
 ---
 
 # IntegriBilt Infrastructure
 
-## Naming
+Version 2.1, 2026-11-16. Merged from 2.0 (2026-10-03) plus facts verified live on SVR02
+on 2026-11-16. This skill holds facts and procedures. The rules themselves are in
+`AGENTS.md` (IntegriBilt Operating Doctrine). If this skill and the doctrine disagree, the
+doctrine wins. If this skill and the live system disagree, the live system wins: verify
+before you change anything.
 
-Use **IntegriBilt** as the normal business name. Use **IntegriBilt LLC** when the legal company name is needed.
+Canonical copy: `integribilt-infrastructure/` in the GitHub repo
+`IntegriBilt/integribilt-skills` (branch `master`). Every change is committed there first,
+then published to the LiteLLM skills gateway on SVR02 (see "Skills and MCP"), then
+installed to `~/.agents/skills/` (and `~/.claude/skills/`) on every machine. Do not edit
+an installed copy. The repo path named by 2.0, `integribilt-stack/agents/skills/`, does
+not exist. Commits in this repo before 2026-11-16 still documented ASM and the `:8445`
+memory routes; both are retired.
 
-The frontmatter `name` and `description` are required skill metadata. Keep `name` lowercase and hyphenated because it is the internal skill identifier.
+## The five rules that cause the most damage when broken
 
-### IntegriBilt Naming Convention: kebab-case
+1. **Tailscale only.** Reach hosts over the tailnet. SVR02 is
+   `ssh lmiller@integribilt.local@100.84.138.13` (or `ssh svr02` where the alias is
+   installed). No `ssh -i`, no keys, no LAN SSH to a tailnet host. If Tailscale fails,
+   report it and stop.
+2. **One YAML.** One `docker-compose.yml` for SVR02 and OFC01. No override files, no
+   copies, no `docker run` for managed services. Per-host differences are `.env` variables.
+   Known exception on disk: SVR02 has a `docker-compose.override.yml` (Zabbix ports and
+   agent hostname, dated 2026-07-15) that Compose loads automatically. Fold it into `.env`
+   variables; do not add to it and do not create another.
+3. **Bitwarden Secrets (`bws`) always.** Never write, echo, or paste a secret. Name it.
+4. **One door.** Models, MCP tools, and skills come through LiteLLM on SVR02. Hermes keeps
+   its own skills and MCP servers. Claude Code and Codex use their subscriptions.
+5. **Read-only first.** Diagnose with read-only commands, show the evidence, then act.
 
-All folders, skills, repositories, container service names, compose stacks, scripts, BWS project/secret slugs, MCP server identifiers, ASM sync namespaces, and any other persistent identifier created for IntegriBilt infrastructure use **kebab-case**:
+High-risk actions need explicit confirmation from Lester: disk or partition changes,
+deleting data, Docker volume or system prune, credential rotation, database restore,
+firewall or routing changes, OS upgrades, compose edits on a live host, anything touching
+domain controllers, SQL, MiTek, or the front counter during business hours.
 
-- Lowercase letters only.
-- Words separated by single hyphens (`-`).
-- No spaces, no underscores, no camelCase, no PascalCase, no dots in names.
-- Examples: `integribilt-stack`, `integribilt-skills`, `docker-configs`, `truss-design-bot`, `asm-conversation-sync`, `run-neo4j-mcp.sh`.
-- Counter-examples to reject or rename: `IntegriBilt_Stack`, `truss design bot`, `TrussDesignBot`, `truss.design.bot`.
+## Hosts
 
-When the user creates a new folder, repo, secret, container, or script and does not specify a name, propose a kebab-case name and confirm before creating. When you find an existing non-conforming name, flag it but do not rename live resources without explicit user confirmation, especially anything attached to BWS secret IDs, compose service names, or AD-joined resources.
+| Host | LAN | Tailnet | Role |
+|---|---|---|---|
+| SVR02 | 192.168.254.2 | 100.84.138.13, `svr02` | Ubuntu 25.10 Docker hub. iDRAC 192.168.254.202 |
+| OFC01 | 192.168.254.86 | `ofc01-windows` | Windows 11 workstation. RTX 3090 24 GB + RTX 2080 Super 8 GB |
+| SVR12 | 192.168.254.12 | `svr12` | SQL Server and MiTek. Business-critical |
+| SVR15 | 192.168.254.15 | `svr15-1` | Print server, agent host. iDRAC .215 |
+| SVR07, SVR17 | .7, .17 | - | Domain controllers, DNS, DHCP. Network-critical. Use .17 first |
+| SVR09 | 192.168.254.9 | `truenas-scale` | TrueNAS storage, NFS exports. iDRAC .209 |
+| FC01, FC02 | verify | `fc01`, `fc02` | Front counter, cash drawers, card machines. Sales-critical |
+| LT01 | verify | `lt01` | Lester's laptop |
+| Spruce | 192.168.254.29 | - | Legacy ERP. Read-only |
+| SVR10 | - | - | Removed from inventory. Do not plan work for it |
 
-## Operating Posture
+Tailnet name suffix: `tail7254e6.ts.net`. Only SVR02 runs the Tailscale SSH server today.
+Windows hosts cannot run it; use RDP or PowerShell remoting over the tailnet address.
+Gateway is a Fortinet at 192.168.254.1. The site WAN is a Verizon hotspot: slow pulls are
+normal, not a fault (see `references/infrastructure.md`, Network).
 
-Act as the infrastructure copilot for IntegriBilt. Convert the user's goal into safe, exact, evidence-driven steps for servers, desktops, Docker services, monitoring, storage, Docker_MCP access, BWS/Bitwarden secrets, front counter endpoints, and deployment workflow. Prefer decisive execution when tools are available. Otherwise provide copy-ready commands for the correct host.
+## Where things run
 
-## Non-Negotiables
+SVR02 (`svr02` profile), ports verified listening 2026-11-16:
 
-1. Follow the **ONE YAML RULE**: infrastructure changes involving containers, services, networks, volumes, ports, profiles, or deployments must conform to the shared `docker-compose.yml` source of truth.
-2. Use the live SVR02 stack file first: `/home/lmiller/integribilt-stack/docker-compose.yml`.
-3. Treat OFC01 compose checkouts as working/reference copies that must stay aligned with SVR02, including `E:\projects\codex\workspace\docker-configs\docker-compose.yml` and the reference clone `E:\clones\docs\integribilt-stack\docker-compose.yml` when present.
-4. Use Docker Compose V2 syntax: `docker compose` with a space. Do not use the legacy hyphenated command.
-5. Always specify the correct compose profile when using raw compose commands. Prefer helper scripts for startup: `./start-stack.sh` on SVR02 and `.\start-stack.ps1` on OFC01.
-6. Use **BWS ALWAYS**: Bitwarden Secrets Manager CLI is the approved source for secrets, passwords, API keys, tokens, private keys, database credentials, and service credentials.
-7. Never hardcode, display, echo, log, save, or paste plaintext secrets into chat, scripts, compose files, command output, screenshots, troubleshooting notes, or tool config files.
-8. Do not use local plaintext secret files or local credential directories as a source of truth. If a task needs a credential, retrieve it through BWS or ask for the Bitwarden item/secret ID.
-9. Use **Docker_MCP/MCP gateways** for IDE-based AI clients (Cursor, Claude Code, Codex, Antigravity, Cline/Roo Code, Claude Desktop) to reach Neo4j, Redis, and other shared services. Do not have agents connect directly to raw Neo4j or Redis databases for memory work unless the user explicitly asks for database administration.
-10. Use **ASM (Antigravity Storage Manager)** as the sync and communication MCP server for **non-IDE AI clients** (claude.ai web, Claude mobile, ChatGPT web/app, browser-based agents, anything that cannot reach the Docker_MCP gateway directly). ASM encrypts conversation/memory state with AES-256-GCM under a Master Password, syncs through the user's private Google Drive `AntigravitySync` folder, and exposes that store to non-IDE clients as an MCP server. Never print, echo, log, or store the ASM Master Password, the Google OAuth client secret, or the AES key. Treat them like BWS secrets.
-11. Treat inventory in this skill as a baseline. Verify current state with `docker-compose.yml`, BWS, Docker_MCP config, ASM status, monitoring, or live read-only commands before making changes.
-12. Start with read-only diagnostics, show evidence when available, then act. Prefer facts and command output over broad explanation.
-13. Require explicit confirmation for destructive or high-risk actions unless the user already gave an exact command to run.
-14. Apply the kebab-case naming rule from the Naming section to every new folder, repo, container, compose service, script, BWS slug, MCP server ID, and ASM namespace. Propose conforming names; do not rename live resources without explicit user confirmation.
+| Service | Address | Notes |
+|---|---|---|
+| LiteLLM gateway | `http://192.168.254.2:4000` | Models at `/v1`, MCP at `/mcp/`, skills index at `/.well-known/agent-skills/index.json`, admin UI at `/ui` |
+| Paperclip | `http://192.168.254.2:3110` | Agent company, tickets `INT-###`. Public URL `https://svr02.tail7254e6.ts.net:8443`. Runs in `authenticated` mode: API writes need a board session or board API key |
+| Honcho | `http://192.168.254.2:8008` | Hermes memory. Self-hosted |
+| Open WebUI | `http://192.168.254.2:3005` | Chat UI on LiteLLM |
+| Langfuse | `:3006` | Defined, not wired to LiteLLM yet |
+| Omnigent | `:8005` | Agent coordinator, dormant |
+| Neo4j | `:7474`, `:7687` | Graph store on `/srv/graphdb`. Access through MCP, not raw |
+| redis-cache | `:6381` | Scratch. DB 7 reserved for agent state |
+| Ollama | `:11434` | Embedding model only |
+| Grafana / Prometheus / Graylog | `:3003` / `:9091` / `:9000` | Monitoring |
+| Zabbix web | `:8093` | Zabbix now runs on SVR02 |
+| gitea-skills | `:3002` | Git host for skills (web UI only; its API path returned 404 on 2026-11-16) |
 
-High-risk actions include disk formatting, partition changes, deleting data, destructive Docker cleanup, volume deletion, database credential changes, database imports/restores, firewall/routing changes, OS upgrades, `docker-compose.yml` edits, stopping domain/DNS/DHCP services, interrupting front counter cash drawer or credit card machine operations, disabling monitoring, changing BWS access, or anything that could interrupt business-critical services.
+OFC01:
 
-## Current Infrastructure Focus
+| Service | Address | Notes |
+|---|---|---|
+| Hermes gateway API | `http://192.168.254.86:8642` | One gateway, profiles default, cletus, jackson, rocky |
+| LM Studio / Bionic server | `http://192.168.254.86:1234/v1` | Backs LiteLLM `local/*`. Must be started |
+| Docker Model Runner | `127.0.0.1:12434` | Loopback only |
+| Buzz relay (self-hosted) | `ws://192.168.254.86:3220` | Idle. The live relay is Block-hosted |
 
-- **SVR02:** Ubuntu 24.04.3 LTS Docker infrastructure hub, iDRAC `192.168.254.202`, primary live stack at `/home/lmiller/integribilt-stack/docker-compose.yml`.
-- **OFC01:** Windows operations/developer workstation with Docker Desktop/WSL2, compose workspace under `E:\projects\codex\workspace\docker-configs\`, BWS via `bws.exe`, and Docker Desktop MCP Gateway for local AI clients.
-- **SVR12:** SQL server and primary MiTek server. Treat as business-critical and verify IP/backup state before any change.
-- **SVR17 and SVR07:** domain controller, DNS, and DHCP servers. Treat as core authentication and network-critical systems.
-- **FC01 and FC02:** front counter systems with cash drawers and credit card machines. Treat as sales-critical endpoints.
-- **OFC02:** office desktop.
-- **LT01:** Lester's laptop.
-- **SVR09:** TrueNAS storage server, `192.168.254.9`, iDRAC `192.168.254.209`.
-- **SVR15:** print server baseline; SQL role moved to SVR12.
-- **SVR10:** removed from active inventory. Do not plan work for it unless the user provides new current details.
+Live Buzz relay: `wss://integribilt.communities.buzz.xyz`. See the `integribilt-buzz` skill.
 
-Read `references/infrastructure.md` for detailed server, workstation, storage, container, and MCP baselines. Read `references/procedures.md` for approved command patterns.
+## Models
 
-## Core Workflow
+Base URL for every OpenAI-compatible client: `http://192.168.254.2:4000/v1`.
+Full list: `GET /v1/models` with your virtual key. All names below existed on 2026-11-16
+(94 models registered).
 
-1. Identify the target host, service, storage device, source of truth, and risk level.
-2. Check or request the relevant source of truth:
-   - `docker-compose.yml` for container desired state
-   - BWS/Bitwarden for secrets and credentials
-   - Docker_MCP configuration for IDE-client access to Neo4j/Redis/shared MCP services
-   - ASM configuration for non-IDE-client conversation/memory sync (claude.ai, mobile, browser agents)
-   - monitoring tools for service health
-   - live read-only commands for host, service, network, storage, and Docker state
-   - `references/infrastructure.md` for known infrastructure baseline
-   - `references/procedures.md` for approved command patterns
-3. Run or provide read-only diagnostics first:
-   - host status: disk, memory, uptime, mounts, drive layout
-   - Docker status: containers, compose config, logs, networks, Docker Desktop status
-   - monitoring status: Zabbix/OpenNMS/Grafana/Prometheus/Graylog/Uptime-Kuma reachability
-   - MCP status when Neo4j/Redis AI memory access is involved (Docker_MCP for IDE clients, ASM for non-IDE clients)
-   - endpoint status for FC01/FC02 cash drawer and credit card machine impact
-4. State the finding in plain language, then provide the smallest safe action plan.
-5. For changes, include exact commands, expected result, verification command, and rollback/risk note.
+| Lane | Names | Use for |
+|---|---|---|
+| Local, free | `local/qwen3-14b`, `local/gpt-oss-20b` | Bulk work, drafts, privacy-sensitive text |
+| Free cloud | `free/gemma-4-31b`, `free/gpt-oss-20b`, `free/nemotron-super-120b` | Drafts. Rate-limited |
+| Cheap | `ib-fast`, `ib-code`, `ib-smart`, `ib-balanced`, `glm-5.3`, `kimi-k3` | Daily work |
+| Frontier | `claude-fable-5`, `claude-sonnet-5`, `codex-5.6` | Leadership, architecture, security |
+| Embeddings | `ib-embedding`, `ib-embedding-local`, `ib-embedding-ollama` | Retrieval |
 
-## Response Standards
+`dmr/*` and `docker-*` names point at Docker Model Runner and are unreachable from SVR02.
+Models live in LiteLLM's database, not a config file. Change them in the admin UI.
+Every consumer has its own named virtual key with a budget (`paperclip`, `hermes`, `codex`,
+`claude`, `opencode`, `openwebui`, the `buzz-*` agents, and so on).
 
-For infrastructure work, answer in this order unless the user asks for a different format:
+## Skills and MCP
 
-1. **Status:** one-line conclusion.
-2. **Evidence:** relevant command output, file reference, or verified fact.
-3. **Action:** exact next commands or completed action.
-4. **Verify:** command/output that proves success.
-5. **Risk/rollback:** only when the action can break service or data.
+- Skills: `~/.agents/skills/<name>/SKILL.md` on every machine. OpenCode, Goose, and
+  LM Studio read that folder. Claude Code reads `~/.claude/skills/`, which the installer
+  fills with copies.
+- Published skills: LiteLLM stores them in its database. Discover with
+  `GET http://192.168.254.2:4000/.well-known/agent-skills/index.json`; each entry's `url`
+  is `/v1/skills/<id>/archive`, a zip with `SKILL.md` at the root. Publish with
+  `POST /v1/skills?custom_llm_provider=litellm_proxy` (admin key, multipart zip). The
+  Anthropic-hosted `skill_01...` records that `GET /v1/skills` also lists are not served
+  by the archive route.
+- MCP: `http://192.168.254.2:4000/mcp/`, header `x-litellm-api-key: Bearer <virtual key>`.
+  Servers are registered on the gateway and granted per key.
+- Hermes: skills in `%LOCALAPPDATA%\hermes\skills\` and `profiles\<name>\skills\`; MCP
+  servers under `mcp_servers:` in each profile's `config.yaml`.
 
-Keep commands copy-ready. Use fenced code blocks. Avoid broad theory unless it prevents a bad decision.
+## Reference files
 
-## Reference Files
-
-- `references/infrastructure.md`: naming convention, SVR02, OFC01, server inventory, front counter endpoints, disk layout, container map, BWS rules, Docker_MCP access, ASM (Antigravity Storage Manager) for non-IDE AI clients, and criticality notes.
-- `references/procedures.md`: approved diagnostic, deployment, BWS, Docker_MCP, ASM setup/sync/conflict, SSH, service-health, endpoint, storage, and recovery command patterns.
+- `references/infrastructure.md`: service map, disks, network, backups, memory stores,
+  criticality, known issues.
+- `references/procedures.md`: command patterns for access, health checks, compose changes,
+  secrets, LiteLLM, backups, and the guarded hosts.
